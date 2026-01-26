@@ -1,4 +1,4 @@
-# BMM_model_data_fusion
+# Joint Estimation of Mass and Velocity of a Moving Object Traversing an Euler–Bernoulli Beam: A Model–Data Fusion Approach
 
 This repository contains the reference implementation for our paper (submitted to Mechanical Systems and Signal Processing, MSSP) on joint mass–velocity estimation of a moving object traversing an Euler–Bernoulli beam from single-point vibration measurements using an Adaptive Unscented Kalman Filter (AUKF).
 
