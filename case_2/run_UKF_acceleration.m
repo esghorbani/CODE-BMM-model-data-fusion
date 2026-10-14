@@ -12,14 +12,15 @@ X_est = zeros(St_Len, Nt);
 P_saved = zeros(St_Len, St_Len, Nt);
 
 X_est(:,1) = X_int';
-P = diag([ones(1,2*n_modes), 1e9, 1e5]);
+P = diag([1e-6*ones(1,2*n_modes), 1e4, 1e1]);   % retuned for the corrected filter
+P_saved(:,:,1) = P;
 
-Q = 1e-18 * eye(St_Len);
+Q = diag([1e-13*ones(1,2*n_modes), 1e-2, 1e-6]);   % modal, mass, speed
 R0 = zeros(1,Nt);
 R0(1) = 1e-1;
 
 gama = 1;
-alfa = 0.7;
+alfa = 0.9;   % value used for the manuscript results
 
 phi_center = mode_shapesPP(param.L/2, n_modes, param.L)';
 
@@ -33,7 +34,7 @@ for k = 1:Nt-1
 
     for j = 1:size(SP,2)
         F(:,j) = TF(SP(:,j), t(k), dt);
-        yj = BMM_UKF(t(k), F(:,j));
+        yj = BMM_UKF(t(k+1), F(:,j));
         H(j) = phi_center * yj(n_modes+1:2*n_modes);
 
         XS = XS + W(j)*F(:,j);
@@ -51,17 +52,15 @@ for k = 1:Nt-1
     PY = PY + R0(k);
 
     K = PXY / PY;
-    res = y_meas(k) - YS;
+    res = y_meas(k+1) - YS;   % measurement at the predicted time t(k+1)
 
     X_est(:,k+1) = XS + K*res;
     P = PX - K*PY*K';
 
-    P_saved(:,:,k) = P;
+    P_saved(:,:,k+1) = P;
 
-    % Adaptive R (same as your working code)
-    y_pred = BMM_UKF(t(k+1), X_est(:,k+1));
-    eps = y_meas(k) - phi_center * y_pred(n_modes+1:2*n_modes);
-    R0(k+1) = alfa*R0(k) + (1-alfa)*(eps^2 + PY);
+    % Adaptive R: innovation form (Mohamed & Schwarz 1999), floored
+    R0(k+1) = max(alfa*R0(k) + (1-alfa)*(res^2 - (PY - R0(k))), 1e-8);
 end
 
 end

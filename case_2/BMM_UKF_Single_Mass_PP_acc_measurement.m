@@ -6,6 +6,7 @@ clear all
 % Set the random seed for reproducibility
 rng('default');  % Resets the generator to the modern configuration
 rng(1234);  % You can choose any seed number you like
+diary('case2_acc_log.txt'); diary on
 
 
 global n_modes m EI L ;   % Global variables
@@ -94,10 +95,10 @@ plot(t, total_displacement_center, 'r', 'LineWidth', 1.5)
 hold on
 plot(t, total_displacement_center_noisy, 'b', 'LineWidth', 1)
 legend('Ground Truth', 'Noisy Measurement', 'Location', 'Best')
-title('Total displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 10)
-ylabel('Displacement (m)', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Time (s)', 'FontName', 'Times New Roman', 'FontSize', 10)
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+title('Total displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+ylabel('Displacement (m)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Time (s)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 xlim([0,5])
 % Second subplot for PSD
 subplot(1,2,2)
@@ -105,26 +106,26 @@ plot(t, total_accel_center, 'r', 'LineWidth', 1.5)
 hold on
 plot(t, total_acc_center_noisy, 'b', 'LineWidth', 1)
 legend('Ground Truth', 'Noisy Measurement', 'Location', 'Best')
-title('Total acceleration at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 10)
-ylabel('Acceleration (m/s^2)', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Time (s)', 'FontName', 'Times New Roman', 'FontSize', 10)
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+title('Total acceleration at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+ylabel('Acceleration (m/s^2)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Time (s)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 xlim([0,5])
 
 % subplot(2,2,3)
 % plot(freq(1:1000), log10(abs(FFT_signal(1:1000))), 'LineWidth', 1.5)
-% title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 10)
-% ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 10)
-% xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
-% set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+% title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 % xlim([1,5])
 % 
 % subplot(2,2,4)
 % plot(freq(1:1000), log10(abs(FFT_signal(1:1000))), 'LineWidth', 1.5)
-% title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 10)
-% ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 10)
-% xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
-% set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+% title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 % xlim([17,22])
 % % Adjust layout
 
@@ -161,10 +162,12 @@ tt = linspace(tspan(1), tspan(end), nSteps+1)';
 
 X_int = [zeros(1,n_modes)  zeros(1,n_modes) 0.7*M1 0.7*v1 ];
 
-p=diag([ones(1,2*n_modes),10^5,10^2]);  %initial covariance
+P0_modal = 10^-6; P0_mass = 10^4; P0_vel = 10^1;   % initial variances (modal states, moving mass, speed)
+Q_modal = 10^-13; Q_mass = 10^-2; Q_vel = 10^-6;     % process-noise variances (retuned for the corrected filter)
+p=diag([P0_modal*ones(1,2*n_modes),P0_mass,P0_vel]);  %initial covariance
 
-R0(1)=10^-3 ;            %covariance of measurement noise
-Q=(10^-18 )*eye(2*n_modes+2); %covariance of process noise
+R0(1)=10^-1 ;            %initial measurement-noise variance (as stated in the manuscript)
+Q=diag([Q_modal*ones(1,2*n_modes), Q_mass, Q_vel]); %covariance of process noise
 
 St_Len=length(X_int);
 
@@ -172,6 +175,8 @@ St_Len=length(X_int);
 
 
 X_est(:,1) = X_int';
+P_saved = zeros(St_Len,St_Len,nSteps+1);
+P_saved(:,:,1) = p;
 gama=0;
 r=1;
 alfa=0.9;
@@ -194,7 +199,7 @@ for i = 1:nSteps
         x=SP(:,g);
         F(:,g)=TF(x,tt(i), dt);
         x1=F(:,g);
-        y1=BMM_UKF(tt(i),x1);
+        y1=BMM_UKF(tt(i+1),x1);   % output map evaluated at the predicted time tt(i+1)
         H(:,g)=phi_center* y1(n_modes+1:2*n_modes);
         XS1(:,g)=F(:,g)*W(g);
         YS1(:,g)=H(:,g)*W(g);
@@ -236,11 +241,11 @@ for i = 1:nSteps
     PY=PY+R0(i);  %%adding covariance of the measurement noise
 
     k=PXY/PY;    % Kalman Gain
-    Res(i)=total_acc_center_noisy(i)-YS;
-    X_est(:,i+1)=XS+k*Res(i);  % Updated States
+    Res(i)=total_acc_center_noisy(i+1)-YS;   % measurement at the predicted time tt(i+1)
+    X_est(:,i+1)=XS+k*Res(i);  % correction at the predicted time tt(i+1)
     p=(PX)-k*(PY)*k';         % updated states covariance matrix for new iteration
 
-    P_saved(:,:,i)=p;
+    P_saved(:,:,i+1)=p;
     %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
     %adding adaptive Based on the following paper
 
@@ -253,9 +258,9 @@ for i = 1:nSteps
     x_temp=X_est(:,i+1);
     %         F_temp=f(x_temp);
     H_temp=BMM_UKF(tt(i+1),x_temp);
-    eps(i)= total_acc_center_noisy(i)-phi_center*H_temp(n_modes+1:2*n_modes);
+    eps(i)= total_acc_center_noisy(i+1)-phi_center*H_temp(n_modes+1:2*n_modes);
     %
-    R0(i+1)=alfa*R0(i)+(1-alfa)*(eps(i)*eps(i)'+PY1); %updating the measurement error cov.
+    R0(i+1)=max(alfa*R0(i)+(1-alfa)*(Res(i)*Res(i)'-PY1), 1e-8); % innovation form (Mohamed & Schwarz 1999): nu*nu' - P^yy(without R), floored
 
     %        R0=mean(eps(t)*eps(t)')+YS;
     r=r+1;
@@ -270,6 +275,8 @@ clc
 
 
 total_vel_center_estimated = (phi_center* X_est(n_modes+1:2*n_modes,:));
+idx = tt(1:end) >= 10;
+fprintf('acceleration case, alfa=%.2f: dM %.2f %%  dv %.3f %%  R(t>=10) %.3e  floor hits %d\n', alfa, 100*(mean(X_est(2*n_modes+1,idx))-M1)/M1, 100*(mean(X_est(2*n_modes+2,idx))-v1)/v1, mean(R0(idx)), sum(R0<=1e-8*(1+1e-9)));
 
 total_dis_center_estimated = (phi_center* X_est(1:n_modes,:));
 figure('Position', [100, 100, 500, 170])  % [left, bottom, width, height]
@@ -280,28 +287,30 @@ plot(t, total_displacement_center, 'r', 'LineWidth', 1.5)
 hold on
 plot(t, total_dis_center_estimated, 'b', 'LineWidth', 1)
 legend('Ground Truth', 'Noisy Measurement', 'Location', 'Best')
-title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 10)
-ylabel('Displacement (m)', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Time (s)', 'FontName', 'Times New Roman', 'FontSize', 10)
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+ylabel('Displacement (m)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Time (s)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 % xlim([10,15])
 % Second subplot for PSD
 subplot(1,2,2)
 plot(freq(1:1000), log10(abs(FFT_signal(1:1000))), 'LineWidth', 1.5)
-title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 10)
-ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+title('Total Displacement at the Center of the Beam', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
+axs_ = findobj(gcf,'Type','axes'); [~,ord_] = sort(arrayfun(@(a) a.Position(1), axs_)); labs_ = {'(a)','(b)','(c)','(d)'};
+for ii_ = 1:numel(axs_), text(axs_(ord_(ii_)), -0.12, -0.24, labs_{ii_}, 'Units','normalized','FontName','Times New Roman','FontSize', 9.5); end   % panel labels
 exportgraphics(gcf, 'Displacement_acc.pdf', 'ContentType', 'vector', 'BackgroundColor', 'none');
 
 % Adjust layout
 
-var_mass = sqrt(P_saved(2*n_modes+1, 2*n_modes+1, :));  % Assuming P is 3D and this extracts the variances
+var_mass = sqrt(P_saved(2*n_modes+1, 2*n_modes+1, 2:end));  % aligned with X_est(:,2:end)  % Assuming P is 3D and this extracts the variances
 var_mass = reshape(var_mass, [1, length(var_mass)]);
 mass_ub = X_est(2*n_modes+1, 2:end) + 3 * var_mass;
 mass_lb = X_est(2*n_modes+1, 2:end) - 3 * var_mass;
 
-var_vel = sqrt(P_saved(2*n_modes+2, 2*n_modes+2, :));  % Assuming P is 3D and this extracts the variances
+var_vel = sqrt(P_saved(2*n_modes+2, 2*n_modes+2, 2:end));  % aligned with X_est(:,2:end)  % Assuming P is 3D and this extracts the variances
 var_vel = reshape(var_vel, [1, length(var_mass)]);
 vel_ub = X_est(2*n_modes+2, 2:end) + 3 * var_vel;
 vel_lb = X_est(2*n_modes+2, 2:end) - 3 * var_vel;
@@ -319,11 +328,11 @@ plot(t(2:end), Mass, '--', 'LineWidth', 1.5)
 fill([t(2:end)' fliplr(t(2:end)')], [mass_ub fliplr(mass_lb)], 'b', 'FaceAlpha', 0.2, 'EdgeColor', 'none')
 
 legend('UKF estimated', 'Ground Truth', 'Location', 'Best')
-ylabel('Moving mass (kg)', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
+ylabel('Moving mass (kg)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
 ylim([0.5*M1, 1.2*M1])  % Set y-axis limits as needed
-xlim([0,25])
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+xlim([0,15])
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 
 subplot(1,2,2)
 plot(t(2:end), X_est(2*n_modes+2,2:end), 'LineWidth', 1.5)
@@ -333,11 +342,13 @@ plot(t(2:end), Vel, '--', 'LineWidth', 1.5)
 fill([t(2:end)' fliplr(t(2:end)')], [vel_ub fliplr(vel_lb)], 'b', 'FaceAlpha', 0.2, 'EdgeColor', 'none')
 
 % legend('UKF estimated', 'Ground Truth', 'Location', 'Best')
-ylabel('Velocity (m/s)', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
-xlim([0,25])
+ylabel('Velocity (m/s)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlim([0,15])
 ylim([0,20])
+axs_ = findobj(gcf,'Type','axes'); [~,ord_] = sort(arrayfun(@(a) a.Position(1), axs_)); labs_ = {'(a)','(b)','(c)','(d)'};
+for ii_ = 1:numel(axs_), text(axs_(ord_(ii_)), -0.12, -0.24, labs_{ii_}, 'Units','normalized','FontName','Times New Roman','FontSize', 9.5); end   % panel labels
 exportgraphics(gcf, 'Parameters_acc.pdf', 'ContentType', 'vector', 'BackgroundColor', 'none');
 
 % Adjust layout
@@ -351,21 +362,23 @@ plot(t, total_dis_center_estimated, 'LineWidth', 1.5)
 hold on
 plot(t, total_displacement_center, '--', 'LineWidth', 1.5)
 legend('UKF estimated', 'Ground Truth', 'Location', 'Best')
-ylabel('Displacement (m)', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
+ylabel('Displacement (m)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
 % ylim([0.5*M1, 1.2*M1])  % Set y-axis limits as needed
 % xlim([10, 25])
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 
 subplot(1,2,2)
 plot(t, total_vel_center_estimated, 'LineWidth', 1.5)
 hold on
 plot(t, total_vel_center, '--', 'LineWidth', 1.5)
 % legend('UKF estimated', 'Ground Truth', 'Location', 'Best')
-ylabel('Velocity (m/s)', 'FontName', 'Times New Roman', 'FontSize', 10)
-xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
-set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+ylabel('Velocity (m/s)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 % xlim([10, 15])
+axs_ = findobj(gcf,'Type','axes'); [~,ord_] = sort(arrayfun(@(a) a.Position(1), axs_)); labs_ = {'(a)','(b)','(c)','(d)'};
+for ii_ = 1:numel(axs_), text(axs_(ord_(ii_)), -0.12, -0.24, labs_{ii_}, 'Units','normalized','FontName','Times New Roman','FontSize', 9.5); end   % panel labels
 exportgraphics(gcf, 'states_acc.pdf', 'ContentType', 'vector', 'BackgroundColor', 'none');
 
 
@@ -383,8 +396,8 @@ exportgraphics(gcf, 'states_acc.pdf', 'ContentType', 'vector', 'BackgroundColor'
 % plot(t, max_line,'g','LineWidth', 1.5)
 % hold on
 % plot(t, ave_line,'k','LineWidth', 1.5)
-% ylabel('Measurement uncertaitny variance', 'FontName', 'Times New Roman', 'FontSize', 10)
-% xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
+% ylabel('Measurement uncertaitny variance', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% xlabel('Time (sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
 % legend('Measurement Error', 'Lower bound', 'Upper bound', 'Average')
 % 
 % xlim([5,20])
@@ -392,10 +405,10 @@ exportgraphics(gcf, 'states_acc.pdf', 'ContentType', 'vector', 'BackgroundColor'
 % 
 % subplot(1,2,2)
 % plot(freq(1:3700), (abs(FFT_R0(1:3700))), 'LineWidth', 1.5)
-% title('Power spectural density of Error', 'FontName', 'Times New Roman', 'FontSize', 10)
-% ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 10)
-% xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 10)
-% set(gca, 'FontName', 'Times New Roman', 'FontSize', 10)
+% title('Power spectural density of Error', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% ylabel('PSD', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% xlabel('Frequency (rad/sec)', 'FontName', 'Times New Roman', 'FontSize', 9.5)
+% set(gca, 'FontName', 'Times New Roman', 'FontSize', 9.5)
 
 %%
 % [mu_F, var_F] = UT_dynamic_force(tt, X_est, P_saved, dt);
