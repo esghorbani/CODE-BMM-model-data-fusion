@@ -38,7 +38,7 @@ if ~isfield(opts, 'R_covariance'), opts.R_covariance = 'innovation'; end
 R_covariance = validatestring(opts.R_covariance, {'prior', 'posterior', 'innovation'});
 if isfield(opts, 'v_init') && ~isempty(opts.v_init), opts.init(2) = opts.v_init/v1; end
 
-X_int  = [zeros(1,n), zeros(1,n), 0, 0, opts.init(1)*M1, opts.init(2)*v1];
+X_int  = [zeros(1,n), zeros(1,n), 0, 0, opts.init(1)*M1, opts.init(2)*v1];   % initial state: beam and vehicle at rest, M and v at 70 % of truth
 St_Len = length(X_int);
 
 X_est   = zeros(St_Len, Nt);
@@ -55,21 +55,23 @@ R0 = zeros(1,Nt);
 R0(1) = opts.R0_init;
 LL = zeros(1,Nt);
 
-gama = 0;
+gama = 0;   % sigma-point spread parameter (see sigmapoint.m)
 alfa = opts.alfa;
 
 phi_center = mode_shapesPP(par.L/2, n, par.L)';
 MF = @(X) phi_center * X(1:n);          % measurement function
 C = [phi_center, zeros(1,n+4)];         % linear measurement matrix
 
+% ---- filter loop: predict with sigma points, update with the mid-span displacement ----
 for k = 1:Nt-1
 
-    [W,SP] = sigmapoint(X_est(:,k), P, gama, St_Len);
+    [W,SP] = sigmapoint(X_est(:,k), P, gama, St_Len);   % sigma points and weights
 
     XS = 0; YS = 0;
     F = zeros(St_Len, size(SP,2));
     H = zeros(1, size(SP,2));
 
+    % propagate each sigma point one RK4 step; XS, YS = predicted state and measurement
     for j = 1:size(SP,2)
         F(:,j) = TF_rough(SP(:,j), t(k), dt, par);
         H(j)   = MF(F(:,j));
@@ -77,6 +79,7 @@ for k = 1:Nt-1
         YS = YS + W(j)*H(j);
     end
 
+    % predicted state covariance
     PX = 0;
     for j = 1:size(SP,2)
         PX  = PX  + W(j)*(F(:,j)-XS)*(F(:,j)-XS)';
@@ -90,10 +93,10 @@ for k = 1:Nt-1
     PY1 = C*PX*C';
     PY  = PY1 + R0(k);
 
-    K   = PXY / PY;
-    Res = y_disp(k+1) - YS;
+    K   = PXY / PY;   % Kalman gain
+    Res = y_disp(k+1) - YS;   % innovation
 
-    LL(k+1) = -0.5*(log(2*pi*PY) + Res^2/PY);
+    LL(k+1) = -0.5*(log(2*pi*PY) + Res^2/PY);   % innovation log-likelihood (filter-bank score)
     X_est(:,k+1) = XS + K*Res;
     % Joseph form is equivalent to PX-K*PY*K' for this linear update and
     % better preserves covariance symmetry and positive semidefiniteness.

@@ -1,16 +1,17 @@
 % PLOT_GENERALITY_ERROR_MAP  Converged mass and speed errors over the (mass, speed) grid of the
 % 147-case study, without and with model error, as filled contours (generality_error_map.pdf).
 close all
-C = readtable('generality_cases_clean.csv'); E = readtable('generality_cases_error.csv');
-Ms = unique(C.M_true); vs = unique(C.v_true); [MM, VV] = meshgrid(Ms, vs);
-grid_of = @(T, col) reshape(arrayfun(@(m, v) T.(col)(T.M_true==m & T.v_true==v), MM, VV), size(MM));
-Z = {grid_of(C,'dM'), grid_of(E,'dM'); grid_of(C,'dv'), grid_of(E,'dv')};
+C = readtable('generality_cases_clean.csv'); E = readtable('generality_cases_error.csv');   % per-case summary tables: clean and model-error runs
+Ms = unique(C.M_true); vs = unique(C.v_true); [MM, VV] = meshgrid(Ms, vs);   % mass-speed grid
+grid_of = @(T, col) reshape(arrayfun(@(m, v) T.(col)(T.M_true==m & T.v_true==v), MM, VV), size(MM));   % column of T arranged on the grid
+Z = {grid_of(C,'dM'), grid_of(E,'dM'); grid_of(C,'dv'), grid_of(E,'dv')};   % (a) dM clean, (b) dM error; (c) dv clean, (d) dv error
 ttl = {'Mass error (%), no model error', 'Mass error (%), model error'; 'Speed error (%), no model error', 'Speed error (%), model error'};
-lv = {-12:1:0, -0.5:0.05:0.5}; fn = 'Times New Roman'; fs = 14.4;
+lv = {-12:1:0, -0.5:0.05:0.5}; fn = 'Times New Roman'; fs = 14.4;   % contour levels for mass (%) and speed (%)
 figure('Position',[100 100 900 560])
 for r = 1:2
   for c = 1:2
     subplot(2,2,(r-1)*2+c)
+    % filled contours with the case grid as dots
     contourf(MM/1000, VV, Z{r,c}, lv{r}, 'LineColor', [0.3 0.3 0.3], 'LineWidth', 0.3); hold on
     plot(MM(:)/1000, VV(:), 'k.', 'MarkerSize', 4)
     if r == 1 && c == 1   % cases A (4500 kg, 28 m/s) and B (5800 kg, 16 m/s) of the convergence figure, panel (a) only

@@ -11,40 +11,43 @@
 clc; close all; clear;
 rng('default'); rng(1234);
 diary('robustness_combined_log.txt'); diary on
-par.n_modes = 4; par.m = 200; par.EI = 5.3e9; par.L = 60; par.g = 9.81;
-M1 = 5000; v1 = 15; dt = 0.004; tspan = [0 30];
-n = par.n_modes; phi_center = mode_shapesPP(par.L/2, n, par.L)';
-amplitude_factor = 0.01; offset = 0.01; frequency = 5;
-n_min = 0.01; n_max = 3.0; N_harm = 300;
-f_v = 1.5; zeta_v = 0.20; mu_true = 0.10;
+par.n_modes = 4; par.m = 200; par.EI = 5.3e9; par.L = 60; par.g = 9.81;   % beam: 4 modes, m [kg/m], EI [N m^2], L [m]
+M1 = 5000; v1 = 15; dt = 0.004; tspan = [0 30];   % true mass [kg], speed [m/s], RK4 step [s], simulated time [s]
+n = par.n_modes; phi_center = mode_shapesPP(par.L/2, n, par.L)';   % mode shapes at mid-span (sensor location)
+amplitude_factor = 0.01; offset = 0.01; frequency = 5;   % Case-1 noise model: std = offset + 1 % of |disp| + sinusoidal term
+n_min = 0.01; n_max = 3.0; N_harm = 300;   % ISO 8608 band [cycles/m] and number of harmonics
+f_v = 1.5; zeta_v = 0.20; mu_true = 0.10;   % quarter-car: bounce frequency [Hz], damping ratio, m_w/M
 
-rough_list = {'C','B','A','none'};
-zeta_list  = [0.05 0.02 0];
-Q_default  = 10^-6.2;
+rough_list = {'C','B','A','none'};   % deck roughness classes (none = smooth)
+zeta_list  = [0.05 0.02 0];   % beam modal damping ratios
+Q_default  = 10^-6.2;   % process-noise level of the filter (for the var/Q ratio)
 
 % ---- filter model: original paper model (rigid mass, undamped, smooth) ----
 par_est = par; par_est.mu_w = 1; par_est.k_v = 0; par_est.c_v = 0; par_est.prof = []; par_est.zeta = 0;
 
 % ---- original-model displacement with TRUE parameters (for model error) ----
 [t0, X0] = ode4(@(tt,X) BMM_SS_rough(tt, X, M1, v1, par_est), tspan, zeros(2*n+2,1), dt);
-disp_model = phi_center * X0(:,1:n)';
+disp_model = phi_center * X0(:,1:n)';   % mid-span displacement predicted by the filter model
 
+% ---- loop over the 4 x 3 grid of roughness x beam damping ----
 results = struct([]); k = 0;
 for ir = 1:numel(rough_list)
   for iz = 1:numel(zeta_list)
     k = k + 1; rc = rough_list{ir}; zb = zeta_list(iz);
     fprintf('\n=== roughness %s, beam damping %.0f %% ===\n', rc, 100*zb);
-    par_true = par; par_true.mu_w = mu_true; par_true.zeta = zb;
-    m_s = (1-mu_true)*M1; par_true.k_v = m_s*(2*pi*f_v)^2; par_true.c_v = 2*zeta_v*m_s*(2*pi*f_v);
-    if strcmp(rc,'none'), par_true.prof = []; else, par_true.prof = iso8608_profile(rc, n_min, n_max, N_harm, 42); end
+    par_true = par; par_true.mu_w = mu_true; par_true.zeta = zb;   % data-generating model
+    m_s = (1-mu_true)*M1; par_true.k_v = m_s*(2*pi*f_v)^2; par_true.c_v = 2*zeta_v*m_s*(2*pi*f_v);   % suspension from f_v and zeta_v
+    if strcmp(rc,'none'), par_true.prof = []; else, par_true.prof = iso8608_profile(rc, n_min, n_max, N_harm, 42); end   % same seed: same profile shape, scaled by class
 
+    % synthesise the truth: response, mid-span displacement, contact force
     [t, X] = ode4(@(tt,X) BMM_SS_rough(tt, X, M1, v1, par_true), tspan, zeros(2*n+2,1), dt);
     t = t(:)'; disp_true = phi_center * X(:,1:n)';
     fc_true = contact_force_rough(t, X', M1, v1, par_true);
+    % noisy measurement
     rng(1234); Nt = numel(t); tau = linspace(0,2*pi,Nt);
     nl = offset + amplitude_factor*abs(disp_true) + amplitude_factor*sin(frequency*tau);
     y = disp_true + nl.*randn(1,Nt);
-    idx = t >= 10;
+    idx = t >= 10;   % converged window used for the error statistics
 
     % model-form error in the measurement
     e_model = disp_model - disp_true;
@@ -52,16 +55,18 @@ for ir = 1:numel(rough_list)
     fprintf('model error: RMS %.3f mm (var %.2e m^2); noise RMS %.3f mm; ratio %.2f; var/Q %.1f\n', ...
         1e3*rms_model, rms_model^2, 1e3*rms(y(idx)-disp_true(idx)), rms_model/rms(y(idx)-disp_true(idx)), rms_model^2/Q_default);
 
+    % run the AUKF with the rigid / undamped / smooth filter model
     tic; [X_est, P_saved, R0] = run_UKF_rough(t, y, M1, v1, par_est, dt); fprintf('AUKF %.0f s\n', toc);
-    M_est = X_est(2*n+3,:); v_est = X_est(2*n+4,:);
-    dM = 100*(mean(M_est(idx))-M1)/M1; dv = 100*(mean(v_est(idx))-v1)/v1;
-    sM = 100*std(M_est(t>=20))/M1;
-    fc_est = contact_force_rough(t, X_est(1:2*n+2,:), M_est, v_est, par_est);
-    dfbar = 100*(mean(fc_est(idx))-mean(fc_true(idx)))/(M1*par.g);
+    M_est = X_est(2*n+3,:); v_est = X_est(2*n+4,:);   % parameter states
+    dM = 100*(mean(M_est(idx))-M1)/M1; dv = 100*(mean(v_est(idx))-v1)/v1;   % converged errors [%]
+    sM = 100*std(M_est(t>=20))/M1;   % scatter of the mass estimate after 20 s [%]
+    fc_est = contact_force_rough(t, X_est(1:2*n+2,:), M_est, v_est, par_est);   % contact force reconstructed from the estimates
+    dfbar = 100*(mean(fc_est(idx))-mean(fc_true(idx)))/(M1*par.g);   % mean force error in % of the static weight
     fprintf('M  : %.0f kg, error %.2f %% (std over t>=20 s: %.2f %%)\n', mean(M_est(idx)), dM, sM);
     fprintf('v  : %.3f m/s, error %.2f %%\n', mean(v_est(idx)), dv);
     fprintf('mean force error %.2f %% of Mg; converged R %.2e\n', dfbar, R0(end));
 
+    % store histories and summary numbers for the figures
     results(k).rough = rc; results(k).zeta_b = zb; results(k).t = t;
     results(k).M_est = M_est; results(k).v_est = v_est; results(k).R0 = R0;
     results(k).dM = dM; results(k).dv = dv; results(k).sM = sM; results(k).dfbar = dfbar;

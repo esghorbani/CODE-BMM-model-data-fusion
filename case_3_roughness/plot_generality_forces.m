@@ -4,25 +4,27 @@ function plot_generality_forces(mode)
 if nargin < 1, mode = 'clean'; end
 sfx = ''; if strcmp(mode,'error'), sfx = '_error'; end
 close all
+% ---- load the 4 parts of the generality run ----
 R = [];
 for p = 1:4, S = load(sprintf('generality_forces%s_part%d_results.mat', sfx, p)); R = [R, S.results]; end
 % order as in the manuscript dataset: mass outer (4000:100:6000), speed inner (13:3:31)
 [~, order] = sortrows([[R.M]', [R.v]']); R = R(order); nC = numel(R);
 fprintf('%d cases; converged |dM|<=5%%: %d; mean dM %.2f%%, mean |dv| %.3f%%\n', nC, sum(abs([R.dM])<=5), mean([R.dM]), mean(abs([R.dv])));
-Fdyn = [R.Fdyn_mean3]; Fstat = [R.Fstat_mean3]; DAF = Fdyn./Fstat;
+Fdyn = [R.Fdyn_mean3]; Fstat = [R.Fstat_mean3]; DAF = Fdyn./Fstat;   % mean dynamic / static force over the last 3 s, all cases
 fprintf('Fdyn/Fstat (last 3 s): mean %.4f  std %.4f  min %.4f  max %.4f\n', mean(DAF), std(DAF), min(DAF), max(DAF));
-fn = 'Times New Roman'; fs = 13.4;
+fn = 'Times New Roman'; fs = 13.4;   % figure font
 % ---------------- Figure 9: representative case (5000 kg, 28 m/s) + all-case scatter
-k = find([R.M]==5000 & [R.v]==28, 1); r = R(k);
+k = find([R.M]==5000 & [R.v]==28, 1); r = R(k);   % representative case for panel (a)
 figure('Position',[100 100 850 300])
 subplot(1,2,1)
-i = r.t_full >= 2;
+i = r.t_full >= 2;   % skip the initial transient
 fc_s = movmean(r.fc_est, 31);   % same 31-sample (0.12 s) moving average as the submitted figure
 fprintf('smoothed force 2-15 s: min %.3e max %.3e N; static last 3 s %.3e N; max/static %.2f min/static %.2f\n', min(fc_s(i)), max(fc_s(i)), r.Fstat_mean3, max(fc_s(i))/r.Fstat_mean3, min(fc_s(i))/r.Fstat_mean3);
 plot(r.t_full(i), fc_s(i), 'b', 'LineWidth', 1.0); hold on
 plot(r.t_full(i), r.F_static(i), '--r', 'LineWidth', 1.6)
 legend('dynamic force', 'static force', 'Location', 'northwest'); grid on; xlim([0 15]); ylim([0 10e4])
 xlabel('Time (s)'); ylabel('Force (N)'); set(gca, 'FontName', fn, 'FontSize', fs)
+% panel (b): mean dynamic force vs static weight, one dot per case, identity line
 subplot(1,2,2)
 scatter(Fstat, Fdyn, 40, 'filled'); hold on
 plot([min(Fstat) max(Fstat)], [min(Fstat) max(Fstat)], 'k--', 'LineWidth', 1.5); grid on; axis equal
@@ -31,9 +33,10 @@ axs_ = findobj(gcf,'Type','axes'); [~,ord_] = sort(arrayfun(@(a) a.Position(1), 
 for ii_ = 1:numel(axs_), text(axs_(ord_(ii_)), -0.12, -0.24, labs_{ii_}, 'Units','normalized','FontName','Times New Roman','FontSize',fs); end   % panel labels
 exportgraphics(gcf, ['dyn_force_vs_statics' sfx '.pdf'], 'ContentType', 'vector', 'BackgroundColor', 'none');
 % ---------------- Figure 10: two representative cases (41: 4500 kg / 28 m/s, 128: 5800 kg / 16 m/s)
-ks = [find([R.M]==4500 & [R.v]==28, 1), find([R.M]==5800 & [R.v]==16, 1)];
+ks = [find([R.M]==4500 & [R.v]==28, 1), find([R.M]==5800 & [R.v]==16, 1)];   % cases A and B of the paper
 col = [0 0.447 0.741; 0.85 0.325 0.098]; lab = {'A','B'};   % case 41 -> A, case 128 -> B
 figure('Position',[100 100 800 320])
+% mass panel (a) and speed panel (b): 2-sigma band, estimate, truth (dashed)
 for j = 1:2
     r = R(ks(j)); t = r.t;
     subplot(1,2,1); hold on
